@@ -62,6 +62,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalCopyBtn = document.getElementById("modalCopyBtn");
   const modalEditBtn = document.getElementById("modalEditBtn");
   const modalDeleteBtn = document.getElementById("modalDeleteBtn");
+  
+  // Checklist elements
+  const toggleChecklistBtn = document.getElementById("toggleChecklistBtn");
+  const checklistContainer = document.getElementById("checklistContainer");
+  const checklistItems = document.getElementById("checklistItems");
+  const addChecklistItemBtn = document.getElementById("addChecklistItemBtn");
+  const modalChecklistContainer = document.getElementById("modalChecklistContainer");
+  const modalChecklistItems = document.getElementById("modalChecklistItems");
 
   let editNoteId = null;
   let currentNoteId = null;
@@ -72,6 +80,10 @@ document.addEventListener("DOMContentLoaded", () => {
   let searchQuery = '';
   let categoryFilterValue = 'all';
   let userCategories = ['Personal', 'Work', 'Others'];
+  
+  // Checklist variables
+  let showChecklist = false;
+  let checklistData = [];
 
   // Show toast notification
   function showToast(message) {
@@ -84,6 +96,129 @@ document.addEventListener("DOMContentLoaded", () => {
       toast.classList.add('opacity-0');
       setTimeout(() => toast.classList.add('hidden'), 300);
     }, 2000);
+  }
+
+  // Checklist functions
+  function toggleChecklist() {
+    showChecklist = !showChecklist;
+    checklistContainer.classList.toggle('hidden', !showChecklist);
+    toggleChecklistBtn.innerHTML = showChecklist 
+      ? '<i class="fas fa-minus mr-1"></i> Hide Checklist'
+      : '<i class="fas fa-list mr-1"></i> Add Checklist';
+    
+    if (!showChecklist) {
+      checklistData = [];
+      renderChecklistItems();
+    } else if (checklistData.length === 0) {
+      // Add first item when showing checklist
+      addChecklistItem();
+    }
+  }
+
+  function addChecklistItem(text = '', completed = false) {
+    const itemId = Date.now() + Math.random();
+    checklistData.push({ id: itemId, text, completed });
+    renderChecklistItems();
+    focusLastChecklistItem();
+  }
+
+  function removeChecklistItem(itemId) {
+    checklistData = checklistData.filter(item => item.id !== itemId);
+    renderChecklistItems();
+  }
+
+  function updateChecklistItem(itemId, newText) {
+    const item = checklistData.find(item => item.id === itemId);
+    if (item) {
+      item.text = newText;
+    }
+  }
+
+  function toggleChecklistItem(itemId) {
+    const item = checklistData.find(item => item.id === itemId);
+    if (item) {
+      item.completed = !item.completed;
+      renderChecklistItems();
+    }
+  }
+
+  function renderChecklistItems() {
+    checklistItems.innerHTML = '';
+    
+    checklistData.forEach(item => {
+      const itemElement = document.createElement('div');
+      itemElement.className = 'flex items-center gap-2 group';
+      itemElement.innerHTML = `
+        <input 
+          type="checkbox" 
+          ${item.completed ? 'checked' : ''}
+          class="h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+        >
+        <input 
+          type="text" 
+          value="${item.text}" 
+          placeholder="Add checklist item..."
+          class="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+        <button class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+          <i class="fas fa-trash"></i>
+        </button>
+      `;
+      
+      const checkbox = itemElement.querySelector('input[type="checkbox"]');
+      const textInput = itemElement.querySelector('input[type="text"]');
+      const deleteBtn = itemElement.querySelector('button');
+      
+      checkbox.addEventListener('change', () => toggleChecklistItem(item.id));
+      textInput.addEventListener('input', (e) => updateChecklistItem(item.id, e.target.value));
+      textInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          addChecklistItem();
+        } else if (e.key === 'Backspace' && e.target.value === '') {
+          e.preventDefault();
+          removeChecklistItem(item.id);
+        }
+      });
+      deleteBtn.addEventListener('click', () => removeChecklistItem(item.id));
+      
+      checklistItems.appendChild(itemElement);
+    });
+  }
+
+  function focusLastChecklistItem() {
+    setTimeout(() => {
+      const inputs = checklistItems.querySelectorAll('input[type="text"]');
+      if (inputs.length > 0) {
+        inputs[inputs.length - 1].focus();
+      }
+    }, 10);
+  }
+
+  function renderModalChecklist(note) {
+    if (note.checklist && note.checklist.length > 0) {
+      modalChecklistContainer.classList.remove('hidden');
+      modalChecklistItems.innerHTML = '';
+      
+      note.checklist.forEach(item => {
+        const itemElement = document.createElement('div');
+        itemElement.className = 'flex items-center gap-3 p-3 bg-gray-50 rounded-lg';
+        itemElement.innerHTML = `
+          <input 
+            type="checkbox" 
+            ${item.completed ? 'checked' : ''}
+            disabled
+            class="h-5 w-5 text-blue-600 rounded border-gray-300 ${item.completed ? 'bg-blue-600' : ''}"
+          >
+          <span class="flex-1 ${item.completed ? 'line-through text-gray-500' : 'text-gray-700'}">
+            ${item.text}
+          </span>
+        `;
+        modalChecklistItems.appendChild(itemElement);
+      });
+    } else {
+      modalChecklistContainer.classList.add('hidden');
+    }
   }
 
   // Get category color
@@ -254,16 +389,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      await addDoc(collection(db, "notes"), {
+      const noteData = {
         userId: auth.currentUser.uid,
         title,
         content,
         category,
         createdAt: new Date().toISOString()
-      });
+      };
+      
+      // Add checklist data if it exists
+      if (showChecklist && checklistData.length > 0) {
+        noteData.checklist = checklistData.filter(item => item.text.trim() !== '');
+      }
+      
+      await addDoc(collection(db, "notes"), noteData);
       
       noteTitle.value = "";
       noteContent.value = "";
+      checklistData = [];
+      showChecklist = false;
+      checklistContainer.classList.add('hidden');
+      toggleChecklistBtn.innerHTML = '<i class="fas fa-list mr-1"></i> Add Checklist';
+      renderChecklistItems();
       showToast("Note added successfully!");
       loadNotes();
     } catch (err) {
@@ -344,9 +491,12 @@ async function loadNotes() {
       noteCard.innerHTML = `
         <div class="flex justify-between items-start mb-2">
           <h3 class="font-semibold text-gray-800 truncate flex-1 mr-2">${note.title}</h3>
-          <span class="category-tag ${getCategoryColor(note.category)} text-xs">
-            ${note.category}
-          </span>
+          <div class="flex items-center gap-2">
+            ${note.checklist && note.checklist.length > 0 ? '<i class="fas fa-list text-blue-500 text-sm"></i>' : ''}
+            <span class="category-tag ${getCategoryColor(note.category)} text-xs">
+              ${note.category}
+            </span>
+          </div>
         </div>
         <p class="text-gray-600 text-sm mb-2 flex-grow overflow-hidden" style="max-height: 60px;">
           ${note.content}
@@ -401,6 +551,9 @@ async function loadNotes() {
       `;
       modalNoteContent.textContent = note.content;
       
+      // Render checklist in modal
+      renderModalChecklist(note);
+      
       // Show modal
       noteModal.classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -436,6 +589,20 @@ async function loadNotes() {
       noteTitle.value = note.title;
       noteContent.value = note.content;
       noteCategory.value = note.category;
+      
+      // Handle checklist data for existing notes
+      if (note.checklist && note.checklist.length > 0) {
+        showChecklist = true;
+        checklistContainer.classList.remove('hidden');
+        toggleChecklistBtn.innerHTML = '<i class="fas fa-minus mr-1"></i> Hide Checklist';
+        checklistData = [...note.checklist];
+      } else {
+        showChecklist = false;
+        checklistContainer.classList.add('hidden');
+        toggleChecklistBtn.innerHTML = '<i class="fas fa-list mr-1"></i> Add Checklist';
+        checklistData = [];
+      }
+      renderChecklistItems();
 
       addNoteBtn.classList.add("hidden");
       updateNoteBtn.classList.remove("hidden");
@@ -455,16 +622,30 @@ async function loadNotes() {
       return;
     }
 
-    await updateDoc(doc(db, "notes", editNoteId), { 
+    const updateData = { 
       title, 
       content, 
       category,
       updatedAt: new Date().toISOString()
-    });
+    };
+    
+    // Add checklist data if it exists
+    if (showChecklist && checklistData.length > 0) {
+      updateData.checklist = checklistData.filter(item => item.text.trim() !== '');
+    } else {
+      updateData.checklist = [];
+    }
+    
+    await updateDoc(doc(db, "notes", editNoteId), updateData);
     
     editNoteId = null;
     noteTitle.value = "";
     noteContent.value = "";
+    checklistData = [];
+    showChecklist = false;
+    checklistContainer.classList.add('hidden');
+    toggleChecklistBtn.innerHTML = '<i class="fas fa-list mr-1"></i> Add Checklist';
+    renderChecklistItems();
     addNoteBtn.classList.remove("hidden");
     updateNoteBtn.classList.add("hidden");
     showToast("Note updated successfully!");
@@ -632,5 +813,12 @@ async function loadNotes() {
         addNoteBtn.click();
       }
     }
+  });
+  
+  // Checklist event listeners
+  toggleChecklistBtn.addEventListener('click', toggleChecklist);
+  
+  addChecklistItemBtn.addEventListener('click', () => {
+    addChecklistItem();
   });
 });
